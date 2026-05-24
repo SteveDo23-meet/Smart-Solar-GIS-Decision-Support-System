@@ -24,24 +24,34 @@ const ELECTRICITY_VALUE_USD_PER_KWH = 0.18;
 const CO2_REDUCTION_KG_PER_KWH = 0.45;
 
 const getInstalledCostPerKwp = (candidate: RoiCandidate) => {
-  if (['building', 'public_building'].includes(candidate.type)) return 950;
-  if (candidate.type === 'parking') return 1200;
-  if (['road', 'highway', 'road_shoulder', 'transport_corridor'].includes(candidate.type)) return 1400;
-  if (['open_space', 'paved_area', 'park'].includes(candidate.type)) return 1100;
+  if (['building', 'public_building'].includes(candidate.type)) 
+    return 950;
+  if (candidate.type === 'parking') 
+    return 1200;
+  if (['road', 'highway', 'road_shoulder', 'transport_corridor'].includes(candidate.type)) 
+    return 1400;
+  if (['open_space', 'paved_area', 'park'].includes(candidate.type)) 
+    return 1100;
   return 1150;
 };
 
 const getRiskMultiplier = (candidate: RoiCandidate) => {
-  if (candidate.decisionStatus === 'Not Recommended') return 1.22;
-  if (candidate.riskLevel === 'High') return 1.18;
-  if (candidate.riskLevel === 'Medium') return 1.08;
+  if (candidate.decisionStatus === 'Not Recommended') 
+    return 1.22;
+  if (candidate.riskLevel === 'High') 
+    return 1.18;
+  if (candidate.riskLevel === 'Medium') 
+    return 1.08;
   return 1;
 };
 
 const getRoiLabel = (paybackYears: number): RoiLabel => {
-  if (paybackYears <= 5.5) return 'Excellent ROI';
-  if (paybackYears <= 8) return 'High ROI';
-  if (paybackYears <= 11) return 'Moderate ROI';
+  if (paybackYears <= 5.5) 
+    return 'Excellent ROI';
+  if (paybackYears <= 8) 
+    return 'High ROI';
+  if (paybackYears <= 11) 
+    return 'Moderate ROI';
   return 'Low ROI';
 };
 

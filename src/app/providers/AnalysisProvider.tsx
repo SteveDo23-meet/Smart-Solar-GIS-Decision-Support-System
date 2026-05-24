@@ -2,6 +2,8 @@
 import React, { createContext, useContext } from 'react';
 import type { ReactNode } from 'react';
 import { useMockAnalysis } from '../../hooks/useMockAnalysis';
+import { scoringConfig as defaultScoringConfig } from '../../config/scoringConfig';
+import type { ScoringConfig } from '../../config/scoringConfig';
 import type { AnalysisResult, AnalyzedPOI } from '../../services/solarAnalysis.service';
 import type { POI, PoiType } from '../../data/mockPois';
 import { POI_TYPE_LABELS } from '../../data/mockPois';
@@ -58,6 +60,9 @@ interface AnalysisContextType {
   setSolarSeason: (season: SolarSeason) => void;
   setIsTimelineEnabled: (isEnabled: boolean) => void;
   resetSolarTimeline: () => void;
+  scoringConfig: ScoringConfig;
+  setScoringConfig: React.Dispatch<React.SetStateAction<ScoringConfig>>;
+  resetScoringConfig: () => void;
 }
 
 const AnalysisContext = createContext<AnalysisContextType | undefined>(undefined);
@@ -73,6 +78,8 @@ export const useAnalysisContext = () => {
 interface AnalysisProviderProps {
   children: ReactNode;
 }
+
+const createScoringConfigState = (): ScoringConfig => JSON.parse(JSON.stringify(defaultScoringConfig)) as ScoringConfig;
 
 const average = (values: number[]) => {
   if (!values.length) return 0;
@@ -150,7 +157,8 @@ const createFilteredAnalysis = (analysis: AnalysisResult, rankedLocations: Analy
 };
 
 export const AnalysisProvider: React.FC<AnalysisProviderProps> = ({ children }) => {
-  const analysisLogic = useMockAnalysis();
+  const [activeScoringConfig, setActiveScoringConfig] = React.useState<ScoringConfig>(createScoringConfigState);
+  const analysisLogic = useMockAnalysis(activeScoringConfig);
   const [selectedLocation, setSelectedLocation] = React.useState<POI | null>(null);
   const [filters, setFilters] = React.useState<AnalysisFiltersState>(DEFAULT_ANALYSIS_FILTERS);
   const [isReportOpen, setIsReportOpen] = React.useState(false);
@@ -214,6 +222,10 @@ export const AnalysisProvider: React.FC<AnalysisProviderProps> = ({ children }) 
     setSolarTimeline(DEFAULT_SOLAR_TIMELINE_STATE);
   }, []);
 
+  const resetScoringConfig = React.useCallback(() => {
+    setActiveScoringConfig(createScoringConfigState());
+  }, []);
+
   const value: AnalysisContextType = {
     analysis: analysisLogic.analysis,
     filteredAnalysis,
@@ -248,6 +260,9 @@ export const AnalysisProvider: React.FC<AnalysisProviderProps> = ({ children }) 
     setSolarSeason,
     setIsTimelineEnabled,
     resetSolarTimeline,
+    scoringConfig: activeScoringConfig,
+    setScoringConfig: setActiveScoringConfig,
+    resetScoringConfig,
   };
 
   return (

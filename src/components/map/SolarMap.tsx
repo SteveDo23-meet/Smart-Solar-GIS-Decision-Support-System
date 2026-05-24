@@ -20,6 +20,7 @@ import { MapModeSelector } from './MapModeSelector';
 import { MapControls } from './MapControls';
 import { PoiMarkers } from './PoiMarkers';
 import { PolygonEditor } from './PolygonEditor';
+import { SelectedLocationPanel } from './SelectedLocationPanel';
 
 const GOOGLE_LIBRARIES: Libraries = ['drawing', 'places'];
 
@@ -74,8 +75,10 @@ const getHeatIntensity = (poi: POI | AnalyzedPOI) => {
 
 const ManagedHeatCircle: React.FC<ManagedHeatCircleProps> = ({ poi, overlayResetKey }) => {
   const circleRef = useRef<google.maps.Circle | null>(null);
+  const { selectedLocation, setSelectedLocation } = useAnalysisContext();
   const { score, multiplier } = getHeatIntensity(poi);
   const color = POI_TYPE_COLORS[poi.type];
+  const selected = selectedLocation?.id === poi.id;
 
   useEffect(() => {
     return () => {
@@ -89,6 +92,7 @@ const ManagedHeatCircle: React.FC<ManagedHeatCircleProps> = ({ poi, overlayReset
       key={`heat-${overlayResetKey}-${poi.id}`}
       center={{ lat: poi.lat, lng: poi.lng }}
       radius={(90 + score * 8) * multiplier}
+      onClick={() => setSelectedLocation(poi)}
       onLoad={(circle) => {
         circleRef.current = circle;
       }}
@@ -100,12 +104,12 @@ const ManagedHeatCircle: React.FC<ManagedHeatCircleProps> = ({ poi, overlayReset
       }}
       options={{
         strokeColor: color,
-        strokeOpacity: 0.18,
-        strokeWeight: 1,
+        strokeOpacity: selected ? 0.95 : 0.18,
+        strokeWeight: selected ? 3 : 1,
         fillColor: color,
-        fillOpacity: (0.14 + score / 720) * multiplier,
-        clickable: false,
-        zIndex: 1,
+        fillOpacity: selected ? Math.min(0.42, (0.2 + score / 620) * multiplier) : (0.14 + score / 720) * multiplier,
+        clickable: true,
+        zIndex: selected ? 8 : 1,
       }}
     />
   );
@@ -291,6 +295,7 @@ export const SolarMap: React.FC = () => {
           <MapModeSelector value={map.mapMode} onChange={map.setMapMode} />
           <MapLegend />
           <MapControls />
+          <SelectedLocationPanel />
         </>
       )}
 

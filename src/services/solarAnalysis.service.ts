@@ -1,5 +1,7 @@
 import type { POI, PoiType } from '../data/mockPois';
 import { MOCK_POIS, POI_TYPE_LABELS } from '../data/mockPois';
+import { scoringConfig } from '../config/scoringConfig';
+import type { ScoringConfig } from '../config/scoringConfig';
 import type { HybridSolarResult } from './hybridSolarEngine.service';
 import type { AIRecommendation } from './mlRecommendation.service';
 import { applyMLRecommendations } from './mlRecommendation.service';
@@ -88,7 +90,7 @@ type SolarAnalysisInput = POI & {
   solarEngineResult?: HybridSolarResult;
 };
 
-export const analyzeSolarPotential = (pois: SolarAnalysisInput[]): AnalysisResult => {
+export const analyzeSolarPotential = (pois: SolarAnalysisInput[], config: ScoringConfig = scoringConfig): AnalysisResult => {
   const enrichedLocations = pois.map((poi) => {
       const fallbackScore = calculateSolarScore(poi);
       const solarEngineResult = poi.solarEngineResult ?? {
@@ -125,7 +127,7 @@ export const analyzeSolarPotential = (pois: SolarAnalysisInput[]): AnalysisResul
       };
     });
 
-  const rankedLocations = applyRoiEstimates(applyMLRecommendations(enrichedLocations))
+  const rankedLocations = applyRoiEstimates(applyMLRecommendations(enrichedLocations, config))
     .sort((a, b) => b.aiSuitabilityScore - a.aiSuitabilityScore || b.score - a.score || b.estimatedCapacityKw - a.estimatedCapacityKw)
     .map((poi, index) => ({ ...poi, rank: index + 1 }));
 

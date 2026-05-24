@@ -1,17 +1,29 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { MOCK_POIS } from '../data/mockPois';
 import { analyzeSolarPotential } from '../services/solarAnalysis.service';
 import type { AnalysisResult } from '../services/solarAnalysis.service';
 import type { POI } from '../data/mockPois';
+import type { ScoringConfig } from '../config/scoringConfig';
 
-export const useMockAnalysis = () => {
-  const [analysis, setAnalysis] = useState<AnalysisResult | null>(() => analyzeSolarPotential(MOCK_POIS));
+export const useMockAnalysis = (scoringConfig: ScoringConfig) => {
+  const [analysis, setAnalysis] = useState<AnalysisResult | null>(() => analyzeSolarPotential(MOCK_POIS, scoringConfig));
   const [candidatePois, setCandidatePois] = useState<POI[]>(MOCK_POIS);
   const [isAnalyzed, setIsAnalyzed] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [overlayResetKey, setOverlayResetKey] = useState(0);
   const pendingAnalysisRef = useRef<number | null>(null);
+  const candidatePoisRef = useRef<POI[]>(MOCK_POIS);
+
+  useEffect(() => {
+    if (pendingAnalysisRef.current) {
+      window.clearTimeout(pendingAnalysisRef.current);
+      pendingAnalysisRef.current = null;
+    }
+
+    setAnalysis(analyzeSolarPotential(candidatePoisRef.current, scoringConfig));
+    setIsLoading(false);
+  }, [scoringConfig]);
 
   const runAnalysis = useCallback((pois: POI[]) => {
     if (pendingAnalysisRef.current) {
@@ -22,11 +34,12 @@ export const useMockAnalysis = () => {
     setError(null);
     setOverlayResetKey((key) => key + 1);
     setCandidatePois(pois);
+    candidatePoisRef.current = pois;
     setIsAnalyzed(true);
 
     try {
       pendingAnalysisRef.current = window.setTimeout(() => {
-        const result = analyzeSolarPotential(pois);
+        const result = analyzeSolarPotential(pois, scoringConfig);
         setAnalysis(result);
         setIsLoading(false);
         pendingAnalysisRef.current = null;
@@ -35,7 +48,7 @@ export const useMockAnalysis = () => {
       setError(err instanceof Error ? err.message : 'Analysis failed');
       setIsLoading(false);
     }
-  }, []);
+  }, [scoringConfig]);
 
   const clearAnalysis = useCallback(() => {
     if (pendingAnalysisRef.current) {
@@ -45,6 +58,7 @@ export const useMockAnalysis = () => {
 
     setAnalysis(null);
     setCandidatePois([]);
+    candidatePoisRef.current = [];
     setIsAnalyzed(false);
     setIsLoading(false);
     setError(null);

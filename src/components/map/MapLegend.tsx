@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion';
+import { useAnalysisContext } from '../../app/providers/AnalysisProvider';
 
 const legendItems = [
   { label: 'Parking', letter: 'P', color: '#38bdf8' },
@@ -10,6 +11,10 @@ const legendItems = [
 ];
 
 export const MapLegend: React.FC = () => {
+  const { selectedLocation } = useAnalysisContext();
+
+  if (selectedLocation) return null;
+
   return (
     <motion.div
       initial={{ opacity: 0, x: -10 }}

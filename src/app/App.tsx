@@ -4,6 +4,7 @@ import { EnergyChart } from '../components/dashboard/EnergyChart';
 import { GenerateReportButton } from '../components/dashboard/GenerateReportButton';
 import { MultiAreaComparison } from '../components/dashboard/MultiAreaComparison';
 import { RankingTable } from '../components/dashboard/RankingTable';
+import { ScoringSettings } from '../components/dashboard/ScoringSettings';
 import { ScoreBreakdown } from '../components/dashboard/ScoreBreakdown';
 import { SolarTimelineControls } from '../components/dashboard/SolarTimelineControls';
 import { StatsCards } from '../components/dashboard/StatsCards';
@@ -35,6 +36,7 @@ export const App: React.FC = () => {
         <div className="w-full min-w-0 space-y-3 pr-1">
           <GenerateReportButton />
           <AnalysisFilters />
+          <ScoringSettings />
           <StatsCards />
           <MultiAreaComparison />
           <TopLocations limit={3} />

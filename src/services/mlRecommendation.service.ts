@@ -1,4 +1,6 @@
 import type { POI, PoiType } from '../data/mockPois';
+import { scoringConfig } from '../config/scoringConfig';
+import type { ScoringConfig } from '../config/scoringConfig';
 
 export type AISuitabilityLabel = 'Low' | 'Medium' | 'High' | 'Excellent';
 export type RiskLevel = 'Low' | 'Medium' | 'High';
@@ -29,71 +31,71 @@ type MLInputCandidate = POI & {
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
-const preferredSurfaceBonus: Partial<Record<PoiType, number>> = {
-  parking: 12,
-  building: 10,
-  public_building: 10,
-  paved_area: 8,
-  open_space: 4,
-  bus_station: 3,
-  transport_corridor: 0,
-  road_shoulder: -2,
-  highway: -3,
-  road: -5,
-  park: -10,
+export const getScoringMethodology = (): string => {
+  return 'This system uses a configurable weighted multi-criteria decision-support model. The weights are stored in scoringConfig.ts and can be calibrated according to engineering surveys, municipal policy, or real solar production data.';
 };
 
-const riskSurfacePenalty: Partial<Record<PoiType, number>> = {
-  park: 24,
-  road: 18,
-  highway: 22,
-  road_shoulder: 20,
-  transport_corridor: 18,
-  bus_station: 8,
-};
+export const getAISuitabilityLabel = (score: number, config: ScoringConfig = scoringConfig): AISuitabilityLabel => {
+  const { decisionThresholds } = config;
 
-export const getAISuitabilityLabel = (score: number): AISuitabilityLabel => {
-  if (score >= 86) return 'Excellent';
-  if (score >= 72) return 'High';
-  if (score >= 52) return 'Medium';
+  if (score >= decisionThresholds.excellentMinScore) return 'Excellent';
+  if (score >= decisionThresholds.highMinScore) return 'High';
+  if (score >= decisionThresholds.mediumMinScore) return 'Medium';
   return 'Low';
 };
 
-export const getRiskLevel = (candidate: MLInputCandidate): RiskLevel => {
-  const surfaceRisk = riskSurfacePenalty[candidate.type] ?? 6;
-  const shadingRisk = candidate.shading > 28 ? 18 : candidate.shading > 16 ? 9 : 0;
-  const areaRisk = candidate.area < 850 ? 10 : 0;
+export const getRiskLevel = (candidate: MLInputCandidate, config: ScoringConfig = scoringConfig): RiskLevel => {
+  const { areaThresholds, decisionThresholds, riskFactorWeights, riskSurfaceWeights, shadingThresholds } = config;
+  const configuredRiskWeights: Partial<Record<PoiType, number>> & { default: number } = riskSurfaceWeights;
+  const surfaceRisk = configuredRiskWeights[candidate.type] ?? configuredRiskWeights.default;
+  const shadingRisk =
+    candidate.shading > shadingThresholds.highShading
+      ? riskFactorWeights.highShading
+      : candidate.shading > shadingThresholds.mediumShading
+        ? riskFactorWeights.mediumShading
+        : 0;
+  const areaRisk = candidate.area < areaThresholds.smallAreaRisk ? riskFactorWeights.smallArea : 0;
   const riskScore = surfaceRisk + shadingRisk + areaRisk;
 
-  if (riskScore >= 32) return 'High';
-  if (riskScore >= 16) return 'Medium';
+  if (riskScore >= decisionThresholds.highRiskMinScore) return 'High';
+  if (riskScore >= decisionThresholds.mediumRiskMinScore) return 'Medium';
   return 'Low';
 };
 
-const getDecisionStatus = (score: number, riskLevel: RiskLevel): DecisionStatus => {
-  if (score >= 75 && riskLevel !== 'High') return 'Recommended';
-  if (score >= 50 && score <= 74 && riskLevel !== 'High') return 'Conditional';
+const getDecisionStatus = (score: number, riskLevel: RiskLevel, config: ScoringConfig): DecisionStatus => {
+  const { decisionThresholds } = config;
+
+  if (score >= decisionThresholds.recommendedMinScore && riskLevel !== 'High') return 'Recommended';
+  if (
+    score >= decisionThresholds.conditionalMinScore &&
+    score <= decisionThresholds.conditionalMaxScore &&
+    riskLevel !== 'High'
+  ) {
+    return 'Conditional';
+  }
   return 'Not Recommended';
 };
 
-const getRejectionReason = (candidate: MLInputCandidate): string => {
-  if (candidate.type === 'park' && candidate.shading >= 22) {
+const getRejectionReason = (candidate: MLInputCandidate, config: ScoringConfig): string => {
+  const { areaThresholds, shadingThresholds, surfaceGroups } = config;
+
+  if (candidate.type === 'park' && candidate.shading >= shadingThresholds.parkTreeConflict) {
     return 'High tree shading and public-use conflict reduce installation feasibility.';
   }
 
-  if (['road_shoulder', 'road', 'highway', 'transport_corridor'].includes(candidate.type) && candidate.area < 3_000) {
+  if (surfaceGroups.transportRisk.includes(candidate.type) && candidate.area < areaThresholds.roadMinimumArea) {
     return 'Limited usable surface and high infrastructure risk.';
   }
 
-  if (candidate.type === 'open_space' && candidate.area < 1_500) {
+  if (candidate.type === 'open_space' && candidate.area < areaThresholds.openSpaceMinimumArea) {
     return 'Insufficient area for meaningful solar output.';
   }
 
-  if (candidate.shading >= 30) {
+  if (candidate.shading >= shadingThresholds.rejectionShading) {
     return 'Shading risk is too high for efficient solar production.';
   }
 
-  if (candidate.area < 900) {
+  if (candidate.area < areaThresholds.minimumMeaningfulArea) {
     return 'Insufficient usable area for a meaningful solar installation.';
   }
 
@@ -103,48 +105,53 @@ const getRejectionReason = (candidate: MLInputCandidate): string => {
 export const getRecommendedAction = (
   candidate: MLInputCandidate,
   score: number,
-  riskLevel: RiskLevel
+  riskLevel: RiskLevel,
+  config: ScoringConfig = scoringConfig
 ): string => {
-  if (score >= 86 && riskLevel === 'Low') return 'Advance to feasibility and interconnection review';
-  if (score < 50 || riskLevel === 'High') return 'Do not prioritize; document rejection rationale';
-  if (candidate.type === 'parking' && score >= 74) return 'Prioritize canopy layout and ownership validation';
-  if (['building', 'public_building'].includes(candidate.type) && score >= 70) {
+  const { decisionThresholds, qualityThresholds, surfaceGroups } = config;
+
+  if (score >= decisionThresholds.excellentMinScore && riskLevel === 'Low') return 'Advance to feasibility and interconnection review';
+  if (score < decisionThresholds.conditionalMinScore || riskLevel === 'High') return 'Do not prioritize; document rejection rationale';
+  if (candidate.type === 'parking' && score >= qualityThresholds.parkingPriorityScore) return 'Prioritize canopy layout and ownership validation';
+  if (surfaceGroups.roofInstallation.includes(candidate.type) && score >= qualityThresholds.buildingSurveyScore) {
     return 'Request roof survey and structural load check';
   }
-  if (['road', 'highway', 'road_shoulder', 'transport_corridor'].includes(candidate.type)) {
+  if (surfaceGroups.transportRisk.includes(candidate.type)) {
     return 'Validate right-of-way, setbacks, and safety constraints';
   }
   if (candidate.type === 'park') return 'Review public-use conflict and tree preservation constraints';
-  if (score >= 62) return 'Keep in shortlist pending field validation';
+  if (score >= qualityThresholds.shortlistScore) return 'Keep in shortlist pending field validation';
   return 'Deprioritize until constraints improve';
 };
 
-const getPositiveFactors = (candidate: MLInputCandidate): string[] => {
+const getPositiveFactors = (candidate: MLInputCandidate, config: ScoringConfig): string[] => {
+  const { areaThresholds, qualityThresholds, roiThresholds, shadingThresholds, surfaceGroups } = config;
   const factors: string[] = [];
 
-  if (candidate.solarExposure >= 88) factors.push('Strong solar exposure');
-  if (candidate.area >= 8_000) factors.push('Large usable surface');
-  if (candidate.weatherConditions >= 88) factors.push('Favorable weather factor');
-  if ((candidate.annualEnergyKwh ?? 0) >= 500_000) factors.push('High annual output potential');
-  if (['parking', 'building', 'public_building', 'paved_area'].includes(candidate.type)) {
+  if (candidate.solarExposure >= qualityThresholds.strongSolarExposure) factors.push('Strong solar exposure');
+  if (candidate.area >= areaThresholds.largeUsableSurface) factors.push('Large usable surface');
+  if (candidate.weatherConditions >= qualityThresholds.favorableWeather) factors.push('Favorable weather factor');
+  if ((candidate.annualEnergyKwh ?? 0) >= roiThresholds.strongAnnualOutputKwh) factors.push('High annual output potential');
+  if (surfaceGroups.practicalInstallation.includes(candidate.type)) {
     factors.push('Practical installation surface');
   }
-  if (candidate.shading <= 10) factors.push('Low shading risk');
+  if (candidate.shading <= shadingThresholds.lowShading) factors.push('Low shading risk');
 
   return factors.slice(0, 4);
 };
 
-const getNegativeFactors = (candidate: MLInputCandidate): string[] => {
+const getNegativeFactors = (candidate: MLInputCandidate, config: ScoringConfig): string[] => {
+  const { areaThresholds, qualityThresholds, shadingThresholds, surfaceGroups } = config;
   const factors: string[] = [];
 
-  if (candidate.shading >= 22) factors.push('Elevated shading risk');
-  if (candidate.area < 1_200) factors.push('Limited surface area');
-  if (candidate.weatherConditions < 82) factors.push('Lower weather reliability');
+  if (candidate.shading >= shadingThresholds.elevatedShading) factors.push('Elevated shading risk');
+  if (candidate.area < areaThresholds.limitedSurfaceArea) factors.push('Limited surface area');
+  if (candidate.weatherConditions < qualityThresholds.lowWeatherReliability) factors.push('Lower weather reliability');
   if (candidate.type === 'park') factors.push('Public-use and tree conflict');
-  if (['road', 'highway', 'road_shoulder', 'transport_corridor'].includes(candidate.type)) {
+  if (surfaceGroups.transportRisk.includes(candidate.type)) {
     factors.push('Transport safety and access constraints');
   }
-  if (candidate.surfaceType < 70) factors.push('Surface suitability requires review');
+  if (candidate.surfaceType < qualityThresholds.surfaceReview) factors.push('Surface suitability requires review');
 
   return factors.slice(0, 4);
 };
@@ -152,18 +159,21 @@ const getNegativeFactors = (candidate: MLInputCandidate): string[] => {
 export const getAIExplanation = (
   candidate: MLInputCandidate,
   score: number,
-  riskLevel: RiskLevel
+  riskLevel: RiskLevel,
+  config: ScoringConfig = scoringConfig
 ): string[] => {
+  const { surfaceGroups } = config;
   const explanation = [
-    `Suitability model ranks this candidate as ${getAISuitabilityLabel(score).toLowerCase()} based on surface, output, and risk signals.`,
+    getScoringMethodology(),
+    `Suitability model ranks this candidate as ${getAISuitabilityLabel(score, config).toLowerCase()} based on surface, output, and risk signals.`,
     `Risk is ${riskLevel.toLowerCase()} due to shading, surface class, and implementation constraints.`,
   ];
 
   if (candidate.type === 'parking') explanation.push('Parking areas are favored for solar canopies and predictable ownership review.');
-  if (['building', 'public_building'].includes(candidate.type)) {
+  if (surfaceGroups.roofInstallation.includes(candidate.type)) {
     explanation.push('Public roofs are favored when structural review is feasible.');
   }
-  if (['road', 'highway', 'road_shoulder', 'transport_corridor'].includes(candidate.type)) {
+  if (surfaceGroups.transportRisk.includes(candidate.type)) {
     explanation.push('Transport corridors retain energy potential but require safety and right-of-way validation.');
   }
   if (candidate.type === 'park') explanation.push('Park candidates are penalized for tree cover and public-space conflicts.');
@@ -172,40 +182,65 @@ export const getAIExplanation = (
 };
 
 export const applyMLRecommendation = <TCandidate extends MLInputCandidate>(
-  candidate: TCandidate
+  candidate: TCandidate,
+  config: ScoringConfig = scoringConfig
 ): SolarCandidateWithAI<TCandidate> => {
-  const normalizedOutput = clamp(((candidate.annualEnergyKwh ?? 0) / 1_000_000) * 14, 0, 14);
-  const areaSignal = clamp(Math.log10(Math.max(candidate.area, 100)) * 8 - 16, 0, 18);
-  const scoreSignal = (candidate.score ?? 0) * 0.22;
-  const exposureSignal = candidate.solarExposure * 0.24;
-  const weatherSignal = candidate.weatherConditions * 0.12;
-  const surfaceSignal = candidate.surfaceType * 0.12;
-  const shadingPenalty = candidate.shading * 0.34;
-  const typeSignal = preferredSurfaceBonus[candidate.type] ?? 0;
-  const riskLevel = getRiskLevel(candidate);
-  const riskPenalty = riskLevel === 'High' ? 10 : riskLevel === 'Medium' ? 4 : 0;
+  const { areaThresholds, confidenceWeights, featureWeights, scoreBounds, surfaceTypeWeights } = config;
+
+  // This is an explainable configurable decision-support model, not a trained ML model.
+  // The weights can be calibrated in future versions with engineering surveys or production data.
+  const normalizedOutput = clamp(
+    ((candidate.annualEnergyKwh ?? 0) / featureWeights.annualOutput.normalizationKwh) * featureWeights.annualOutput.maxContribution,
+    0,
+    featureWeights.annualOutput.maxContribution
+  );
+  const areaSignal = clamp(
+    Math.log10(Math.max(candidate.area, featureWeights.area.minimumInputArea)) * featureWeights.area.logarithmicScale -
+      featureWeights.area.logarithmicOffset,
+    0,
+    featureWeights.area.maxContribution
+  );
+  const scoreSignal = (candidate.score ?? 0) * featureWeights.baseSolarScore;
+  const exposureSignal = candidate.solarExposure * featureWeights.solarExposure;
+  const weatherSignal = candidate.weatherConditions * featureWeights.weatherConditions;
+  const surfaceSignal = candidate.surfaceType * featureWeights.surfaceType;
+  const shadingPenalty = candidate.shading * featureWeights.shadingPenalty;
+  const typeSignal = surfaceTypeWeights[candidate.type];
+  const riskLevel = getRiskLevel(candidate, config);
+  const riskPenalty = riskLevel === 'High' ? featureWeights.highRiskPenalty : riskLevel === 'Medium' ? featureWeights.mediumRiskPenalty : 0;
   const aiSuitabilityScore = Math.round(
     clamp(
       exposureSignal + weatherSignal + surfaceSignal + scoreSignal + areaSignal + normalizedOutput + typeSignal - shadingPenalty - riskPenalty,
-      0,
-      100
+      scoreBounds.min,
+      scoreBounds.max
     )
   );
-  const decisionStatus = getDecisionStatus(aiSuitabilityScore, riskLevel);
-  const rejectionReason = decisionStatus === 'Not Recommended' ? getRejectionReason(candidate) : undefined;
-  const positiveFactors = getPositiveFactors(candidate);
-  const negativeFactors = rejectionReason ? [rejectionReason, ...getNegativeFactors(candidate)].slice(0, 4) : getNegativeFactors(candidate);
-  const confidenceBase = 0.58 + positiveFactors.length * 0.055 - negativeFactors.length * 0.025;
-  const aiConfidence = Number(clamp(confidenceBase + (candidate.area > 2_500 ? 0.06 : 0), 0.42, 0.94).toFixed(2));
+  const decisionStatus = getDecisionStatus(aiSuitabilityScore, riskLevel, config);
+  const rejectionReason = decisionStatus === 'Not Recommended' ? getRejectionReason(candidate, config) : undefined;
+  const positiveFactors = getPositiveFactors(candidate, config);
+  const negativeFactors = rejectionReason
+    ? [rejectionReason, ...getNegativeFactors(candidate, config)].slice(0, 4)
+    : getNegativeFactors(candidate, config);
+  const confidenceBase =
+    confidenceWeights.base +
+    positiveFactors.length * confidenceWeights.positiveFactorBoost -
+    negativeFactors.length * confidenceWeights.negativeFactorPenalty;
+  const aiConfidence = Number(
+    clamp(
+      confidenceBase + (candidate.area > areaThresholds.confidenceAreaBonus ? confidenceWeights.areaConfidenceBoost : 0),
+      confidenceWeights.min,
+      confidenceWeights.max
+    ).toFixed(2)
+  );
 
   return {
     ...candidate,
     aiSuitabilityScore,
     aiConfidence,
-    aiSuitabilityLabel: getAISuitabilityLabel(aiSuitabilityScore),
+    aiSuitabilityLabel: getAISuitabilityLabel(aiSuitabilityScore, config),
     riskLevel,
-    recommendedAction: getRecommendedAction(candidate, aiSuitabilityScore, riskLevel),
-    aiExplanation: getAIExplanation(candidate, aiSuitabilityScore, riskLevel),
+    recommendedAction: getRecommendedAction(candidate, aiSuitabilityScore, riskLevel, config),
+    aiExplanation: getAIExplanation(candidate, aiSuitabilityScore, riskLevel, config),
     positiveFactors,
     negativeFactors,
     isRecommended: decisionStatus !== 'Not Recommended',
@@ -215,7 +250,8 @@ export const applyMLRecommendation = <TCandidate extends MLInputCandidate>(
 };
 
 export const applyMLRecommendations = <TCandidate extends MLInputCandidate>(
-  candidates: TCandidate[]
+  candidates: TCandidate[],
+  config: ScoringConfig = scoringConfig
 ): Array<SolarCandidateWithAI<TCandidate>> => {
-  return candidates.map((candidate) => applyMLRecommendation(candidate));
+  return candidates.map((candidate) => applyMLRecommendation(candidate, config));
 };
