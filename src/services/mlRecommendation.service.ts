@@ -32,7 +32,7 @@ type MLInputCandidate = POI & {
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
 export const getScoringMethodology = (): string => {
-  return 'This system uses a configurable weighted multi-criteria decision-support model. The weights are stored in scoringConfig.ts and can be calibrated according to engineering surveys, municipal policy, or real solar production data.';
+  return 'This system uses a configurable weighted decision-support model. The weights and thresholds are stored in scoringConfig.ts and can be calibrated according to engineering surveys, municipal policy, or real solar production data.';
 };
 
 export const getAISuitabilityLabel = (score: number, config: ScoringConfig = scoringConfig): AISuitabilityLabel => {
@@ -187,8 +187,8 @@ export const applyMLRecommendation = <TCandidate extends MLInputCandidate>(
 ): SolarCandidateWithAI<TCandidate> => {
   const { areaThresholds, confidenceWeights, featureWeights, scoreBounds, surfaceTypeWeights } = config;
 
-  // This is an explainable configurable decision-support model, not a trained ML model.
-  // The weights can be calibrated in future versions with engineering surveys or production data.
+  // This is an explainable configurable weighted decision-support model, not a trained ML model.
+  // The default weights and thresholds can be calibrated with field surveys, policy, or production data.
   const normalizedOutput = clamp(
     ((candidate.annualEnergyKwh ?? 0) / featureWeights.annualOutput.normalizationKwh) * featureWeights.annualOutput.maxContribution,
     0,
